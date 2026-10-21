@@ -183,7 +183,7 @@ h4{margin:16px 0 6px;font-size:15px;font-weight:900}
 #app.noui .hud,#app.noui .side,#app.noui .nav,#app.noui #emotes,#app.noui #results,#app.noui #toasts{display:none!important}
 #app.noui #btnShow{display:flex}
 .rp{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0;padding:6px;border-radius:14px;background:#f3eefc}.rp span{font-weight:800;font-size:14px}.rpb{width:44px;height:40px;border-radius:12px;border:0;background:#7B2FF7;color:#fff;font-size:24px;font-weight:900;cursor:pointer}
-.pgal{display:flex;align-items:flex-start;gap:8px;overflow-x:auto;scroll-snap-type:x mandatory;margin:-4px -4px 6px;border-radius:18px}.pgal img{flex:0 0 100%;height:auto;aspect-ratio:4/3;object-fit:cover;border-radius:18px;scroll-snap-align:center;background:#eaf6f0}.pdots{display:flex;justify-content:center;gap:5px;margin-bottom:8px}.pdots i{width:6px;height:6px;border-radius:50%;background:#cfc6e4}
+.pgal{display:flex;align-items:flex-start;gap:8px;overflow-x:auto;scroll-snap-type:x mandatory;margin:-4px 0 8px;border-radius:14px}.pgal img{flex:0 0 auto;height:130px;width:auto;aspect-ratio:4/3;object-fit:cover;border-radius:14px;scroll-snap-align:start;background:#eaf6f0;cursor:zoom-in}#lbox{position:fixed;inset:0;z-index:999;background:rgba(20,12,36,.88);display:flex;align-items:center;justify-content:center;cursor:zoom-out}#lbox img{max-width:min(92vw,960px);max-height:82vh;border-radius:12px}.pdots{display:flex;justify-content:center;gap:5px;margin-bottom:8px}.pdots i{width:6px;height:6px;border-radius:50%;background:#cfc6e4}
 .grate{display:flex;align-items:center;gap:6px;margin-top:4px;font-size:13px}.grate:empty{display:none}.grate b{font-size:15px}.grate .gst i{color:#D9D2E6;font-style:normal}.grate .gst i.f{color:#FBBC04}.grate .gst i.h{background:linear-gradient(90deg,#FBBC04 50%,#D9D2E6 50%);-webkit-background-clip:text;background-clip:text;color:transparent}.grate a{color:#5B4F73;text-decoration:underline}.grate .gsrc{color:#8a809c;font-size:11px}
 .favrow{display:flex;align-items:center;gap:6px}.favrow .li{flex:1;min-width:0}.unfav{border:0;background:#F1ECF7;color:#5B4F73;width:36px;height:36px;border-radius:50%;font-size:14px;flex:none;cursor:pointer}
 </style>
@@ -2169,7 +2169,7 @@ function placePic(p) {
   const n = (window.GAL || {})[p.id]; if (!n) return '';
   const v = window.ART_VER || ''; const B = /duetplay\.app$/.test(location.hostname) && location.hostname !== 'bali.duetplay.app' ? 'https://bali.duetplay.app/' : '';
   let h = ''; for (let k = 0; k < n; k++) h += `<img src="${B}photos/${p.id}_${k}.webp?v=${v}" alt="${esc(p.n)}" loading="lazy">`;
-  return `<div class="pgal">${h}</div>${n > 1 ? `<div class="pdots">${'<i></i>'.repeat(n)}</div>` : ''}`;
+  return `<div class="pgal">${h}</div>`;
 }
 // рейтинг и число отзывов Google — живой запрос Places API (нужен ключ window.GMAPS_KEY), хранится только на время сессии
 const GRate = { m: new Map() };
@@ -2193,6 +2193,7 @@ function openFavs() {
     ${L.length ? `<div class="row-btns"><button class="btn ${Map2D.favOnly ? 'primary' : ''}" data-act="favmap">${Map2D.favOnly ? 'Показать всё на карте' : 'Показать только их на карте'}</button></div>
     <div class="list">${L.map(q => `<div class="favrow"><button class="li" data-act="place" data-id="${q.id}"><i style="background:${CATS[q.c].col}"></i><b>${esc(q.nr && q.r <= 2 ? q.nr : q.n)}</b><span>${esc([q.sub || CATS[q.c].ru, q.ar, Map2D.me ? fmtKm(kmBetween(Map2D.me.lat, Map2D.me.lng, q.y, q.x)) : ''].filter(Boolean).join(' · '))}</span></button><button class="unfav" data-act="unfav" data-id="${q.id}" aria-label="Убрать">✕</button></div>`).join('')}</div>` : ''}`);
 }
+document.addEventListener('click', e => { const im = e.target.closest && e.target.closest('.pgal img'); if (im) { const d = document.createElement('div'); d.id = 'lbox'; d.innerHTML = `<img src="${im.src}" alt="">`; d.onclick = () => d.remove(); document.body.appendChild(d); return; } });
 function openPlace(p) {
   Map2D.selected = p; Map2D.dirty = true;
   const cat = CATS[p.c]; const o = isOpenNow(p.h); const fav = Map2D.favs.has(p.id);
