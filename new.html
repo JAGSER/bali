@@ -2793,20 +2793,19 @@ function coarseOk(d, s) { // крупный декор не стоит на ви
   const L = levelOf(s), o = d._oks || (d._oks = {}), e = o[L]; if (e && (e[1] === HiR.ver || !Map2D.calm)) return e[0]; const isB = (d.k || (d.k = Decor.kind(d))).startsWith('bld_');
   const w = Math.max(isB ? 12 : 8, (isB ? bldKm(d.k) : treeKm(d.k)) * s); const v = isLandF(d.x, d.y) && roadClear(d.x, d.y, scaleOf(L), w * .4 / scaleOf(L)); o[L] = [v, HiR.ver]; return v; }
 function drawDecorDyn(c) {
-  // деревья и дома нарисованы в плитках; здесь поверх людей/машин перерисовываем только те, что стоят перед ними (ближе к зрителю)
+  // деревья и дома нарисованы в основе карты; поверх людей/машин перерисовываем только те, что стоят прямо перед ними
   const M = Map2D; if (!decorDynOn()) return; const L = GL.on ? levelOf(M.s) : tileLevelOf(M.s), sL = GL.on ? M.s : scaleOf(L), k = M.s / sL;
   const dyn = DQ.a.filter(e => e[2] !== undefined); if (!dyn.length) return;
-  const hp = personPx(M.s) * 1.6; let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const e of dyn) { const w = (e[3] || hp) / 2; x0 = Math.min(x0, e[2] - w); x1 = Math.max(x1, e[2] + w); y0 = Math.min(y0, e[0] - (e[4] || hp)); y1 = Math.max(y1, e[0]); }
-  const hit = (X, Y, w, h) => { for (const e of dyn) { if (e[0] >= Y) continue; const ew = (e[3] || hp) / 2, eh = e[4] || hp; if (e[2] + ew < X - w / 2 || e[2] - ew > X + w / 2 || e[0] < Y - h || e[0] - eh > Y) continue; return true; } return false; };
-  const put = (d, X, Y) => { const kd = d.k || (d.k = Decor.kind(d)); const w = Math.max(12, (kd.startsWith('bld_') ? bldKm(kd) : treeKm(kd)) * M.s) * 1.25; const h = w * 1.5;
-    if (X + w / 2 < x0 || X - w / 2 > x1 || Y < y0 || Y - h > y1) return; if (!hit(X, Y, w, h)) return;
-    DQ.add(Y, () => { if (k === 1) Decor.draw(c, d, X, Y, sL); else { c.save(); c.translate(X, Y); c.scale(k, k); Decor.draw(c, d, 0, 0, sL); c.restore(); } }); };
-  const wb = viewBBox(.06 + 60 / M.s);
-  if (sL >= FINE_S) { const C = FINE.cell; const fr = Math.max(.2, Math.min(1, (sL - FINE_S) / 900 + .2));
-    for (let gx = Math.floor(wb[0] / C); gx <= Math.floor(wb[2] / C); gx++) for (let gy = Math.floor(wb[1] / C); gy <= Math.floor(wb[3] / C); gy++) for (const d of fineCell(gx, gy)) { if ((d.v % 1000) / 1000 > fr) continue; put(d, sx2(d.x, d.y), sy2(d.x, d.y)); }
-  } else { const dens = sL < 6 ? .12 : sL < 10 ? .25 : sL < 20 ? .5 : 1;
-    for (let gx = Math.floor(wb[0] / .5); gx <= Math.floor(wb[2] / .5); gx++) for (let gy = Math.floor(wb[1] / .5); gy <= Math.floor(wb[3] / .5); gy++) { const a = M.dgrid.get(gx + ',' + gy); if (!a) continue;
-      for (const d of a) { if (d.r > dens) continue; if (!coarseOk(d, sL)) continue; put(d, sx2(d.x, d.y), sy2(d.x, d.y)); } } }
+  const hp = personPx(M.s) * 1.6; const seen = new Set();
+  const put = (d, X, Y) => { if (seen.has(d)) return; const kd = d.k || (d.k = Decor.kind(d)); const w = Math.max(12, (kd.startsWith('bld_') ? bldKm(kd) : treeKm(kd)) * M.s) * 1.25; const h = w * 1.5;
+    for (const e of dyn) { if (e[0] >= Y) continue; const ew = (e[3] || hp) / 2, eh = e[4] || hp; if (e[2] + ew < X - w / 2 || e[2] - ew > X + w / 2 || e[0] < Y - h || e[0] - eh > Y) continue;
+      seen.add(d); DQ.add(Y, () => { if (k === 1) Decor.draw(c, d, X, Y, sL); else { c.save(); c.translate(X, Y); c.scale(k, k); Decor.draw(c, d, 0, 0, sL); c.restore(); } }); return; } };
+  // ищем только в клетках рядом с движущимися объектами
+  const fine = sL >= FINE_S, C = fine ? FINE.cell : .5, fr = Math.max(.2, Math.min(1, (sL - FINE_S) / 900 + .2)), dens = sL < 6 ? .12 : sL < 10 ? .25 : sL < 20 ? .5 : 1; const cells = new Set();
+  for (const e of dyn) { const [x, y] = w2(e[2], e[0]); const r = Math.max(.03, 120 / M.s); for (let gx = Math.floor((x - r) / C); gx <= Math.floor((x + r) / C); gx++) for (let gy = Math.floor((y - r * .3) / C); gy <= Math.floor((y + r * 1.2) / C); gy++) cells.add(gx + ',' + gy); }
+  for (const key of cells) { const [gx, gy] = key.split(',').map(Number);
+    if (fine) { for (const d of fineCell(gx, gy)) { if ((d.v % 1000) / 1000 > fr) continue; put(d, sx2(d.x, d.y), sy2(d.x, d.y)); } }
+    else { const a = M.dgrid.get(key); if (a) for (const d of a) { if (d.r > dens) continue; if (!coarseOk(d, sL)) continue; put(d, sx2(d.x, d.y), sy2(d.x, d.y)); } } }
 }
 // ===== Ночь и сумерки: цветокоррекция (умножение на сине-фиолетовый / тёплый закатный), а не чёрная плёнка; свет окон, фар, заведений и городов =====
 // огни городов издалека — чёткие точки (как огни с высоты), плотность по числу мест в квадрате 1 км
@@ -3010,7 +3009,7 @@ GL.updateDecor = function (bb) {
     const pad = 1, x0 = Math.floor((bb[0] - pad) / GL_CH), x1 = Math.floor((bb[2] + pad) / GL_CH), y0 = Math.floor((bb[1] - pad) / GL_CH), y1 = Math.floor((bb[3] + pad) / GL_CH);
     for (const key of GL.ckeys) { const i = key.indexOf(','), cx = +key.slice(0, i), cy = +key.slice(i + 1); if (cx < x0 || cx > x1 || cy < y0 || cy > y1) continue; if (!GL.decor.chunks.has(key)) { if (made > 30) { GL.pend = true; continue; } made++; } const ch = glChunk(cx, cy); ch.visible = true; glUpdateChunk(ch, s, lv, false); } }
   for (const ch of GL.decor.fine.values()) ch.visible = false;
-  if (fine) { const now = performance.now(); made = 0; for (let cx = Math.floor((bb[0] - .1)); cx <= Math.floor(bb[2] + .1); cx++) for (let cy = Math.floor(bb[1] - .1); cy <= Math.floor(bb[3] + .3); cy++) { let ch = GL.decor.fine.get(cx + ',' + cy); if (!ch && !isLand(cx + .5, cy + .5) && !isLand(cx, cy) && !isLand(cx + 1, cy + 1) && !isLand(cx + 1, cy) && !isLand(cx, cy + 1)) continue; if (!ch) { if (made > 3) { Map2D.dirty = true; GL.lastCam = ''; continue; } ch = glFineChunk(cx, cy); made++; } ch.visible = true; ch._t = now; glUpdateChunk(ch, s, lv, true); } }
+  if (fine) { const now = performance.now(); made = 0; for (let cx = Math.floor((bb[0] - .1)); cx <= Math.floor(bb[2] + .1); cx++) for (let cy = Math.floor(bb[1] - .1); cy <= Math.floor(bb[3] + .3); cy++) { let ch = GL.decor.fine.get(cx + ',' + cy); if (!ch && !HiR.ready(cx - .06, cy - .06, cx + 1.06, cy + 1.06)) { GL.pend = true; continue; } if (!ch && !isLand(cx + .5, cy + .5) && !isLand(cx, cy) && !isLand(cx + 1, cy + 1) && !isLand(cx + 1, cy) && !isLand(cx, cy + 1)) continue; if (!ch) { if (made > 3) { Map2D.dirty = true; GL.lastCam = ''; continue; } ch = glFineChunk(cx, cy); made++; } ch.visible = true; ch._t = now; glUpdateChunk(ch, s, lv, true); } }
 };
 
 // ----- кадр -----
@@ -3154,9 +3153,9 @@ const NPC_LINES = ['Где тут самый вкусный смузи-боул?
 // после подгрузки дорог или смены масштаба: никто не стоит на дороге, в воде или в доме
 // никого не переносим мгновенно: стоящий в неположенном месте сам уходит к ближайшему свободному, а если такого нет — плавно исчезает
 function walkAway(o) { if (okSpot(o.x, o.y)) return true; for (let r = .004; r < .08; r += .004) for (let k = 0; k < 10; k++) { const a = k / 10 * 6.283 + r * 50, x = o.x + Math.cos(a) * r, y = o.y + Math.sin(a) * r; if (okSpot(x, y)) { o.tx = x; o.ty = y; o.hx = x; o.hy = y; o.wait = 0; o.head = a; return true; } } return false; }
-World.revalidate = function () { const W = World, now = performance.now();
-  for (const n of W.npcs) if (!walkAway(n) && !n.dying) n.dying = now;
-  for (const a of W.animals) { if (a.dying && now - a.dying > 700) continue; if (!walkAway(a) && !a.dying) a.dying = now; } };
+World.revalidate = function () { const W = World, now = performance.now(); const bb = viewBBox(60); const vis = o => o.x > bb[0] && o.x < bb[2] && o.y > bb[1] && o.y < bb[3]; // только те, кого видно
+  for (const n of W.npcs) if (vis(n) && !walkAway(n) && !n.dying) n.dying = now;
+  for (const a of W.animals) { if (a.dying && now - a.dying > 700) continue; if (!vis(a)) continue; if (!walkAway(a) && !a.dying) a.dying = now; } };
 function fadeA(o, now) { let al = o.born ? Math.min(1, (now - o.born) / 700) : 1; if (o.dying) al *= Math.max(0, 1 - (now - o.dying) / 700); return al; }
 World.draw = function (c, now) {
   const M = Map2D, W = World; const t = now / 1000; { const lv = levelOf(M.s); if (lv !== W._lv && M.s >= 16 && M.calm) { W._lv = lv; World.revalidate(); } } const dt = Math.min(.1, (now - (W.lastT || now)) / 1000); W.lastT = now; const s = M.s; const u = unit();
