@@ -2357,7 +2357,7 @@ function initMap(geo, pois) {
   resize();
   window.addEventListener('resize', resize);
   bindGestures();
-  glInit();
+  glInit(); setTimeout(() => GL.prewarm && GL.prewarm(), 2500);
   requestAnimationFrame(frame);
 }
 
@@ -2946,7 +2946,7 @@ GL.build = function () {
   // дороги
   GL.buildRoads(); GL.buildTraffic();
   GL.L.decor.removeChildren(); GL.decor.chunks.forEach(ch => ch.destroy({ children: true })); GL.decor.chunks.clear(); GL.decor.fine.forEach(ch => ch.destroy({ children: true })); GL.decor.fine.clear(); GL.texC = new Map(); GL.decor.lastLv = null;
-  GL.lastCam = '';
+  GL.lastCam = ''; if (GL._warmT) { GL._warmT = 0; GL.prewarm(); }
 };
 
 // цвета дорог по классу (как раньше), непрозрачные — смешаны с цветом суши
@@ -2960,7 +2960,6 @@ function glRoadSegs(roads) { const cols = {}; for (let k = 1; k <= 7; k++) cols[
 GL.buildRoads = function () {
   GL.L.roadsLo.removeChildren().forEach(c => c.destroy()); GL.L.roadsHiO.removeChildren().forEach(c => c.destroy()); GL.L.roadsHiF.removeChildren().forEach(c => c.destroy()); GL.roadTiles.clear(); for (const o of HiR.t.values()) for (const r of o.r) r._gl = 0;
   const g = glLineGeom(glRoadSegs(Map2D.roads)); GL.lo = [glLineMesh(g, 0), glLineMesh(g, 1)]; GL.lo.forEach(m => GL.L.roadsLo.addChild(m));
-  for (const [k, o] of HiR.t) if (o.ok && o.r.length) GL.addRoadTile(k, o.r);
 };
 // подробные дороги по кусочкам (подгружаются при приближении)
 GL.addRoadTile = function (key, roads) { if (!GL.on || GL.roadTiles.has(key)) return; const rs = roads.filter(r => !r._gl); rs.forEach(r => r._gl = 1); if (!rs.length) { GL.roadTiles.set(key, null); return; }
@@ -2986,7 +2985,12 @@ function glMakeSprite(d) { const o = glDecorTex(d); const sp = new PIXI.Sprite(o
 const GL_CH = 2; // км — размер куска декора
 function glChunk(cx, cy) { const key = cx + ',' + cy; let ch = GL.decor.chunks.get(key); if (ch) return ch; ch = new PIXI.Container(); ch.zIndex = cy * GL_CH; ch._items = [];
   for (let gx = cx * 4; gx < cx * 4 + 4; gx++) for (let gy = cy * 4; gy < cy * 4 + 4; gy++) { const a = Map2D.dgrid.get(gx + ',' + gy); if (a) for (const d of a) ch._items.push(d); }
-  ch._items.sort((a, b) => a.y - b.y); ch._sp = ch._items.map(d => { const sp = glMakeSprite(d); ch.addChild(sp); return sp; }); ch._lv = null; GL.decor.chunks.set(key, ch); GL.L.decor.addChild(ch); return ch; }
+  ch._items.sort((a, b) => a.y - b.y); ch._sp = []; ch._tier = 0; ch._lv = null; GL.decor.chunks.set(key, ch); GL.L.decor.addChild(ch); return ch; }
+// спрайты создаются слоями по густоте: издалека нужна лишь малая часть деревьев
+function glDens(s) { return s < 3 ? .03 : s < 4.5 ? .06 : s < 6 ? .12 : s < 10 ? .25 : s < 20 ? .5 : 1; }
+function glTier(ch, dens) { if (ch._tier >= dens) return; const lo = ch._tier; let add = 0;
+  for (const d of ch._items) if (d.r > lo && d.r <= dens) { const sp = glMakeSprite(d); ch.addChild(sp); ch._sp.push(sp); add++; }
+  ch._tier = dens; if (add && lo > 0) { ch.children.sort((a, b) => a._d.y - b._d.y); ch._sp = ch.children.slice(); } ch._lv = null; }
 function glFineChunk(cx, cy) { // подробный декор вблизи: куски по 1 км (4×4 клетки)
   const key = cx + ',' + cy; let ch = GL.decor.fine.get(key); if (ch) return ch; ch = new PIXI.Container(); ch.zIndex = cy + .5; const items = [];
   for (let gx = cx * 4; gx < cx * 4 + 4; gx++) for (let gy = cy * 4; gy < cy * 4 + 4; gy++) for (const d of fineCell(gx, gy)) items.push(d);
@@ -2996,7 +3000,8 @@ function glFineChunk(cx, cy) { // подробный декор вблизи: к
   return ch; }
 // видимость и размер спрайтов (как в прежнем рисовании)
 function glUpdateChunk(ch, s, lv, fine) {
-  if (ch._lv !== lv && (ch._lv === null || (Map2D.calm && performance.now() - GL._t0 < 5))) { ch._lv = lv; const dens = s < 3 ? .03 : s < 4.5 ? .06 : s < 6 ? .12 : s < 10 ? .25 : s < 20 ? .5 : 1; const dyn = s >= DECOR_DYN_S; const fr = Math.max(.2, Math.min(1, (s - FINE_S) / 900 + .2));
+  if (!fine) glTier(ch, glDens(s));
+  if (ch._lv !== lv && (ch._lv === null || (Map2D.calm && performance.now() - GL._t0 < 5))) { ch._lv = lv; const dens = glDens(s); const dyn = s >= DECOR_DYN_S; const fr = Math.max(.2, Math.min(1, (s - FINE_S) / 900 + .2));
     for (const sp of ch._sp) { const d = sp._d; let v;
       if (fine) v = (d.v % 1000) / 1000 <= fr && !(sp._o.isB && s < 18);
       else { v = d.r <= dens && !(sp._o.isB && s < 18); if (v && dyn) v = coarseOk(d, s); }
@@ -3030,7 +3035,7 @@ GL.render = function (now) {
   GL.halo.forEach((m, i) => { const u = m.shader.uniforms; u.uScale = s; u.uW.fill(0); u.uW[0] = hw[i] / 2; });
   // дороги: ширина в пикселях по классу; «проявление» — плавным ростом ширины
   const useHi = s >= HiR.S && HiR.list.size; GL.L.roadsLo.visible = !useHi; GL.L.roadsHiO.visible = GL.L.roadsHiF.visible = useHi;
-  if (s >= HiR.S * .75 && HiR.list.size) { const bb = viewBBox(80); HiR.ready(bb[0], bb[1], bb[2], bb[3]); for (const [k, o] of HiR.t) if (o.ok && !GL.roadTiles.has(k)) GL.addRoadTile(k, o.r); }
+  if (s >= HiR.S * .75 && HiR.list.size) { const bb = viewBBox(80); HiR.ready(bb[0], bb[1], bb[2], bb[3]); let n = 0; for (const [k, o] of HiR.t) if (o.ok && !GL.roadTiles.has(k)) { if (n++ >= 1) { GL.pend = true; break; } GL.addRoadTile(k, o.r); } }
   const wO = new Float32Array(8), wF = new Float32Array(8), lvMax = useHi ? 7 : 4;
   for (let k = 1; k <= 7; k++) { const fa = roadFade(k, s); if (fa <= 0 || k > lvMax) continue; const wOut = roadWpx(k, s) * (.45 + .55 * fa) * Math.min(1, fa * 1.6); wO[k] = k === 7 ? 0 : wOut / 2; wF[k] = (k === 7 ? wOut : Math.max(.8, wOut - (k >= 5 ? 1.4 : 2.2))) / 2; }
   const setR = ms => { ms[0].shader.uniforms.uScale = s; ms[0].shader.uniforms.uW.set(wO); ms[1].shader.uniforms.uScale = s; ms[1].shader.uniforms.uW.set(wF); };
@@ -3042,6 +3047,15 @@ GL.render = function (now) {
   GL.updateDecor(viewBBox(60));
   GL.app.renderer.render(GL.app.stage);
 };
+
+// ----- фоновая подготовка, пока карта стоит: заранее создаём куски деревьев/домов и загружаем их в видеокарту -----
+GL.prewarm = function () { if (!GL.on || GL._warmT) return; GL._warmT = 1;
+  const keys = () => { if (!GL.ckeys) { GL.ckeys = new Set(); for (const d of Map2D.decor) GL.ckeys.add(Math.floor(d.x / GL_CH) + ',' + Math.floor(d.y / GL_CH)); } return [...GL.ckeys].filter(k => !GL.decor.chunks.has(k)); };
+  let q = null; const step = (dl) => { if (!Map2D.calm) return (window.requestIdleCallback || setTimeout)(step);
+    q = q || keys(); const t0 = performance.now(); const lim = dl && dl.timeRemaining ? () => dl.timeRemaining() > 2 : () => performance.now() - t0 < 6;
+    let n = 0; while (q.length && lim() && n++ < 2) { const [cx, cy] = q.pop().split(',').map(Number); const ch = glChunk(cx, cy); glTier(ch, .25); ch.visible = false; }
+    if (q.length) (window.requestIdleCallback || setTimeout)(step); else GL._warmDone = 1; };
+  (window.requestIdleCallback || setTimeout)(step); };
 
 // ===== Живой остров =====
 const World = { clouds: [], birds: [], bikes: [], npcs: [], animals: [], boats: [], sea: [], surfers: [], flights: [], weather: null, night: 0, lastT: 0, lastSpawnKey: '' };
