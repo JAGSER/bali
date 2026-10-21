@@ -1906,7 +1906,7 @@ const Night = { step: 0, N: 4, cache: new Map(), cc: new Map(), tex: {},
     for (const k of ['_w', '_h', '_name', '_face', '_art', '_s']) if (im[k] !== undefined) cv[k] = im[k]; cv._nightOf = im; return e[this.step] = cv; },
   // заранее (в фоне) перекрашиваем все спрайты для текущего шага ночи — без рывков при движении карты
   warm() { if (!this.step) return; const list = [...Object.values(Art.byName)]; if (typeof SPR !== 'undefined') list.push(...Object.values(SPR)); const st = this.step;
-    const go = () => { const t0 = performance.now(); while (list.length && performance.now() - t0 < 8) { const im = list.pop(); if (st !== this.step) return; if (im && im._name && !im._noNight) this.img(im, this.kindOf(im._name)); } if (list.length) (window.requestIdleCallback || setTimeout)(go); }; (window.requestIdleCallback || setTimeout)(go); },
+    const go = () => { const t0 = performance.now(); while (list.length && performance.now() - t0 < 8) { const im = list.pop(); if (st !== this.step) return; if (im && im._name && !im._noNight) { const ni = this.img(im, this.kindOf(im._name)); for (const n of [16, 32, 64, 128]) mip(ni, n); } } if (list.length) (window.requestIdleCallback || setTimeout)(go); }; (window.requestIdleCallback || setTimeout)(go); },
   // окна = небольшие компактные (почти прямоугольные) пятна цвета стекла: тёмно-синего или голубого; большие и неправильные области (основа силуэта, тени) не трогаем
   windows(a, w, h) { const N = w * h, cand = new Uint8Array(N); let opaque = 0;
     for (let p = 0, i = 0; p < N; p++, i += 4) { if (a[i + 3] < 128) continue; opaque++; const r = a[i], g = a[i + 1], b = a[i + 2], L = (.3 * r + .59 * g + .11 * b) / 255;
@@ -2793,7 +2793,7 @@ const DECOR_DYN_S = 45;
 function decorDynOn() { return scaleOf(tileLevelOf(Map2D.s)) >= DECOR_DYN_S; }
 function coarseOk(d, s) { // крупный декор не стоит на видимых дорогах
   // запоминаем по уровню; пока карта двигается — не пересчитываем (дороги догружаются), пересчёт после остановки
-  const L = levelOf(s), o = d._oks || (d._oks = {}), e = o[L]; if (e && (e[1] === HiR.ver || !Map2D.calm)) return e[0]; const isB = (d.k || (d.k = Decor.kind(d))).startsWith('bld_');
+  const L = levelOf(s), o = d._oks || (d._oks = {}), e = o[L]; if (e && (e[1] === HiR.ver || !Map2D.calm)) return e[0]; if (!e && !Map2D.calm) { Map2D._okSkip = true; return true; } const isB = (d.k || (d.k = Decor.kind(d))).startsWith('bld_');
   const w = Math.max(isB ? 12 : 8, (isB ? bldKm(d.k) : treeKm(d.k)) * s); const v = isLandF(d.x, d.y) && roadClear(d.x, d.y, scaleOf(L), w * .4 / scaleOf(L)); o[L] = [v, HiR.ver]; return v; }
 function drawDecorDyn(c) {
   // деревья и дома нарисованы в основе карты; поверх людей/машин перерисовываем только те, что стоят прямо перед ними
@@ -3001,11 +3001,11 @@ function glFineChunk(cx, cy) { // подробный декор вблизи: к
 // видимость и размер спрайтов (как в прежнем рисовании)
 function glUpdateChunk(ch, s, lv, fine) {
   if (!fine) glTier(ch, glDens(s));
-  if (ch._lv !== lv && (ch._lv === null || (Map2D.calm && performance.now() - GL._t0 < 5))) { ch._lv = lv; const dens = glDens(s); const dyn = s >= DECOR_DYN_S; const fr = Math.max(.2, Math.min(1, (s - FINE_S) / 900 + .2));
+  if (ch._lv !== lv && (ch._lv === null || (Map2D.calm && performance.now() - GL._t0 < 5))) { ch._lv = lv; Map2D._okSkip = false; const dens = glDens(s); const dyn = s >= DECOR_DYN_S; const fr = Math.max(.2, Math.min(1, (s - FINE_S) / 900 + .2));
     for (const sp of ch._sp) { const d = sp._d; let v;
       if (fine) v = (d.v % 1000) / 1000 <= fr && !(sp._o.isB && s < 18);
       else { v = d.r <= dens && !(sp._o.isB && s < 18); if (v && dyn) v = coarseOk(d, s); }
-      sp.visible = v; } }
+      sp.visible = v; } if (Map2D._okSkip) { ch._lv = -1; GL.pend = true; } }
   if (ch._lv !== lv) GL.pend = true;
   const tw = 256; for (const sp of ch._sp) { if (!sp.visible) continue; const o = sp._o; const w = Math.max(o.isB ? 12 : s < 4 ? 5 : s < 8 ? 6.5 : 8, o.km * s) * sp._var; const k = (w / s) / (tw * o.tex._fw); sp.scale.set(k * sp._flip, k); }
 }
@@ -3051,6 +3051,7 @@ GL.render = function (now) {
 // ----- фоновая подготовка, пока карта стоит: заранее создаём куски деревьев/домов и загружаем их в видеокарту -----
 GL.prewarm = function () { if (!GL.on || GL._warmT) return; GL._warmT = 1;
   const keys = () => { if (!GL.ckeys) { GL.ckeys = new Set(); for (const d of Map2D.decor) GL.ckeys.add(Math.floor(d.x / GL_CH) + ',' + Math.floor(d.y / GL_CH)); } return [...GL.ckeys].filter(k => !GL.decor.chunks.has(k)); };
+  let texQ = Map2D.decor.filter((d, i) => i % 7 === 0); const texStep = () => { const t0 = performance.now(); while (texQ.length && performance.now() - t0 < 6) { const o = glDecorTex(texQ.pop()); try { GL.app.renderer.prepare.upload(o.tex); } catch (e) {} } if (texQ.length) (window.requestIdleCallback || setTimeout)(texStep); }; (window.requestIdleCallback || setTimeout)(texStep);
   let q = null; const step = (dl) => { if (!Map2D.calm) return (window.requestIdleCallback || setTimeout)(step);
     q = q || keys(); const t0 = performance.now(); const lim = dl && dl.timeRemaining ? () => dl.timeRemaining() > 2 : () => performance.now() - t0 < 6;
     let n = 0; while (q.length && lim() && n++ < 2) { const [cx, cy] = q.pop().split(',').map(Number); const ch = glChunk(cx, cy); glTier(ch, .25); ch.visible = false; }
