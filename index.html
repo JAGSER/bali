@@ -1490,7 +1490,6 @@ World.drawSky = function (c, now) {
     const dist = a.p * 240; const x = dpsX + Math.sin(a.br) * dist, y = dpsY - Math.cos(a.br) * dist; const X = sx2(x, y), Y = sy2(x, y); if (!onScreen(X, Y)) continue;
     const sz = Math.max(26, Math.min(64, 20 + a.p * 40 + Math.min(s, 30) * .6)) * UIK; const ang = (a.dep ? a.br : a.br + Math.PI) - (M.rot ? Math.PI / 2 : 0);
     const pl = Art.pickFrom('veh_plane', 0);
-    c.globalAlpha = .18; c.save(); c.translate(X + 18 + a.p * 30, Y + 26 + a.p * 40); c.rotate(ang); c.drawImage(pl && pl._top ? pl : SPR.plane, -sz / 2, -sz / 2, sz, sz); c.restore(); c.globalAlpha = 1;
     c.strokeStyle = 'rgba(255,255,255,.6)'; c.lineWidth = 2; c.setLineDash([6, 6]); c.beginPath(); c.moveTo(X, Y); c.lineTo(X - Math.sin(ang) * 70, Y + Math.cos(ang) * 70); c.stroke(); c.setLineDash([]);
     c.save(); c.translate(X, Y); c.rotate(ang); c.drawImage(SPR.plane, -sz / 2, -sz / 2, sz, sz); c.restore();
     if (s < 30) { c.font = '800 ' + 10.5 * UIK + 'px Nunito, sans-serif'; c.textAlign = 'center'; c.fillStyle = '#fff'; c.strokeStyle = 'rgba(21,60,120,.6)'; c.lineWidth = 3; const lb = a.f.flight + ' ' + (a.dep ? '→ ' : '← ') + a.f.city_ru; c.strokeText(lb, X, Y + sz / 2 + 12); c.fillText(lb, X, Y + sz / 2 + 12); }
