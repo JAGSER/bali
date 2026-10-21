@@ -2585,8 +2585,12 @@ function picCard(id) {
   im.src = B0 + 'pics/' + id + '.svg?v=' + (window.ART_VER || ''); return null; }
 function landmarkSprite(p) { return Art.landmark(p) || (p.r <= 2 ? (p.c === 'temple' ? SPR.meru : p.c === 'waterfall' ? SPR.waterfall : (p.c === 'beach' || p.c === 'surf') ? SPR.umbrella : null) : null); }
 const Layout = { m: new Map(), clear() { this.m.clear(); } };
+function layKey(L) { const M = Map2D; return L + '|' + M.rot + '|' + [...M.enabled].join(',') + M.openOnly + M.favOnly + (M.focusIds ? M.focusIds.size + ':' + [...M.focusIds].slice(0, 3) : '') + (M.openOnly ? Math.floor(Date.now() / 6e5) : '') + '|' + App.showJokes; }
+// уровень раскладки для кадра: во время зума — уже посчитанный ближайший, новый считаем после остановки
+function layLevel() { const M = Map2D, L = levelOf(M.s); if (M.calm || Layout.m.has(layKey(L)) || M._layL === undefined) return M._layL = L;
+  for (let d = 1; d <= 8; d++) for (const e of [-d, d]) if (Layout.m.has(layKey(L + e))) return L + e; return M._layL; }
 function layoutFor(L) {
-  const M = Map2D; const key = L + '|' + M.rot + '|' + [...M.enabled].join(',') + M.openOnly + M.favOnly + (M.focusIds ? M.focusIds.size + ':' + [...M.focusIds].slice(0, 3) : '') + (M.openOnly ? Math.floor(Date.now() / 6e5) : '') + '|' + App.showJokes;
+  const M = Map2D; const key = layKey(L);
   let lay = M.layouts && M.layouts.key === key ? M.layouts : null; if (lay) return lay;
   if (Layout.m.has(key)) return Layout.m.get(key);
   const sL = scaleOf(L); const few = M.enabled.size < 6;
@@ -2659,12 +2663,12 @@ function txtSpr(t, font, fill, stroke, lw) { const k = t + '|' + font + fill + s
 function drawTxt(c, t, font, fill, stroke, lw, X, Y) { const o = txtSpr(t, font, fill, stroke, lw); c.drawImage(o.c, X - o.w / 2, Y - o.by, o.w, o.h); }
 // картинки мест стоят в общей очереди глубины: ближние деревья, люди и машины их перекрывают, а они — дальние
 function queuePics(c) {
-  const M = Map2D; const L = levelOf(M.s); const lay = layoutFor(L); const k = M.s / scaleOf(L); const W = M.W, H = M.H;
+  const M = Map2D; const L = layLevel(); const lay = layoutFor(L); const k = M.s / scaleOf(L); const W = M.W, H = M.H;
   for (const it of lay.pois) { if (!it.lm) continue; const X0 = sx2(it.p.X, it.p.Y), Y0 = sy2(it.p.X, it.p.Y); const lw = it.lmw * k, lh = it.lmh * k; if (X0 < -lw || X0 > W + lw || Y0 < -40 || Y0 > H + lh + 40) continue;
     const sh = lmShift(it); if (sh === 'wait') continue; const X = sh ? X0 + sh[0] * M.s : X0, Y = sh ? Y0 + sh[1] * M.s : Y0; const im = it.lm;
     DQ.add(Y, () => Art.drawSprite(c, im, X - lw / 2, Y - lh, lw, lh), X, lw * .8, lh); } }
 function drawOverlay(c, now) {
-  const M = Map2D; const L = levelOf(M.s); const lay = layoutFor(L); const k = M.s / scaleOf(L);
+  const M = Map2D; const L = layLevel(); const lay = layoutFor(L); const k = M.s / scaleOf(L);
   M.hitList = []; const vis = []; const W = M.W, H = M.H;
   // подписи вулканов
   for (const v of lay.volcanoLabels) { const X = sx2(v.p.x, v.p.y), Y = sy2(v.p.x, v.p.y) + v.dy * k; if (X < -100 || X > W + 100 || Y < -20 || Y > H + 20) continue; drawTxt(c, v.n, v.f, '#fff', 'rgba(34,22,58,.55)', 3, X, Y); }
@@ -2765,6 +2769,7 @@ function frame(now) {
   if (!isFinite(M.cx) || !isFinite(M.cy) || !isFinite(M.s) || M.s <= 0) { fitAll(true); M.anim = null; }
   M.cx = Math.max(-110, Math.min(80, M.cx)); M.cy = Math.max(-45, Math.min(70, M.cy)); M.s = Math.max(M.minS, Math.min(M.maxS, M.s));
   const c = M.ctx; c.setTransform(M.dpr, 0, 0, M.dpr, 0, 0);
+  if (M.s !== M._ps) { M._ps = M.s; M._zt = now; } M.calm = now - (M._zt || 0) > 160;
   World.night = nightFactor(); { const st = Math.round(World.night * Night.N); if (st !== Night.step) { Night.step = st; Night.cc.clear(); M.dirty = true; } }
   if (GL.on) { GL.render(now); c.clearRect(0, 0, M.W, M.H); } else drawTiles(c, now);
   M.dynHits = [];
@@ -2784,8 +2789,9 @@ function frame(now) {
 const DECOR_DYN_S = 45;
 function decorDynOn() { return scaleOf(tileLevelOf(Map2D.s)) >= DECOR_DYN_S; }
 function coarseOk(d, s) { // крупный декор не стоит на видимых дорогах
-  const L = levelOf(s), ck = L + ':' + HiR.ver; if (d._ck === ck) return d._ok; d._ck = ck; const isB = (d.k || (d.k = Decor.kind(d))).startsWith('bld_');
-  const w = Math.max(isB ? 12 : 8, (isB ? bldKm(d.k) : treeKm(d.k)) * s); d._ok = isLandF(d.x, d.y) && roadClear(d.x, d.y, scaleOf(L), w * .4 / scaleOf(L)); return d._ok; }
+  // запоминаем по уровню; пока карта двигается — не пересчитываем (дороги догружаются), пересчёт после остановки
+  const L = levelOf(s), o = d._oks || (d._oks = {}), e = o[L]; if (e && (e[1] === HiR.ver || !Map2D.calm)) return e[0]; const isB = (d.k || (d.k = Decor.kind(d))).startsWith('bld_');
+  const w = Math.max(isB ? 12 : 8, (isB ? bldKm(d.k) : treeKm(d.k)) * s); const v = isLandF(d.x, d.y) && roadClear(d.x, d.y, scaleOf(L), w * .4 / scaleOf(L)); o[L] = [v, HiR.ver]; return v; }
 function drawDecorDyn(c) {
   // деревья и дома нарисованы в плитках; здесь поверх людей/машин перерисовываем только те, что стоят перед ними (ближе к зрителю)
   const M = Map2D; if (!decorDynOn()) return; const L = GL.on ? levelOf(M.s) : tileLevelOf(M.s), sL = GL.on ? M.s : scaleOf(L), k = M.s / sL;
@@ -2988,11 +2994,12 @@ function glFineChunk(cx, cy) { // подробный декор вблизи: к
   return ch; }
 // видимость и размер спрайтов (как в прежнем рисовании)
 function glUpdateChunk(ch, s, lv, fine) {
-  if (ch._lv !== lv) { ch._lv = lv; const dens = s < 3 ? .03 : s < 4.5 ? .06 : s < 6 ? .12 : s < 10 ? .25 : s < 20 ? .5 : 1; const dyn = s >= DECOR_DYN_S; const fr = Math.max(.2, Math.min(1, (s - FINE_S) / 900 + .2));
+  if (ch._lv !== lv && (ch._lv === null || (Map2D.calm && performance.now() - GL._t0 < 5))) { ch._lv = lv; const dens = s < 3 ? .03 : s < 4.5 ? .06 : s < 6 ? .12 : s < 10 ? .25 : s < 20 ? .5 : 1; const dyn = s >= DECOR_DYN_S; const fr = Math.max(.2, Math.min(1, (s - FINE_S) / 900 + .2));
     for (const sp of ch._sp) { const d = sp._d; let v;
       if (fine) v = (d.v % 1000) / 1000 <= fr && !(sp._o.isB && s < 18);
-      else { v = d.r <= dens && !(sp._o.isB && s < 18); if (v && dyn) { const key = '_ok' + lv; if (d[key] === undefined) d[key] = coarseOk(d, s); v = d[key]; } }
+      else { v = d.r <= dens && !(sp._o.isB && s < 18); if (v && dyn) v = coarseOk(d, s); }
       sp.visible = v; } }
+  if (ch._lv !== lv) GL.pend = true;
   const tw = 256; for (const sp of ch._sp) { if (!sp.visible) continue; const o = sp._o; const w = Math.max(o.isB ? 12 : s < 4 ? 5 : s < 8 ? 6.5 : 8, o.km * s) * sp._var; const k = (w / s) / (tw * o.tex._fw); sp.scale.set(k * sp._flip, k); }
 }
 GL.updateDecor = function (bb) {
@@ -3010,7 +3017,7 @@ GL.render = function (now) {
   if (Night.step !== GL.step) GL.build();
   const tk = Math.floor(baliNow().min / 10) + '/' + Night.step + '/' + (App.showTraffic !== false); if (tk !== GL.trafficKey) GL.buildTraffic();
   const cam = M.cx.toFixed(5) + ',' + M.cy.toFixed(5) + ',' + s.toFixed(4) + ',' + M.W + 'x' + M.H;
-  if (cam === GL.lastCam && !GL.dirty) return; GL.lastCam = cam; GL.dirty = false;
+  GL._t0 = performance.now(); if (cam === GL.lastCam && !GL.dirty && !GL.pend) return; GL.pend = false; GL.lastCam = cam; GL.dirty = false;
   const W = M.W, H = M.H; GL.world.scale.set(s); GL.world.position.set(W / 2 - M.cx * s, H / 2 - M.cy * s);
   // волны: экранная текстура, сдвигается вместе с картой
   GL.waves.visible = s > 1.2; GL.waves.width = W; GL.waves.height = H; GL.waves.tilePosition.set(((W / 2 - M.cx * s) % 180), ((H / 2 - M.cy * s) % 180));
@@ -3150,7 +3157,7 @@ World.revalidate = function () { const W = World, now = performance.now();
   for (const a of W.animals) { if (a.dying && now - a.dying > 700) continue; if (!walkAway(a) && !a.dying) a.dying = now; } };
 function fadeA(o, now) { let al = o.born ? Math.min(1, (now - o.born) / 700) : 1; if (o.dying) al *= Math.max(0, 1 - (now - o.dying) / 700); return al; }
 World.draw = function (c, now) {
-  const M = Map2D, W = World; const t = now / 1000; { const lv = levelOf(M.s); if (lv !== W._lv && M.s >= 16) { W._lv = lv; World.revalidate(); } } const dt = Math.min(.1, (now - (W.lastT || now)) / 1000); W.lastT = now; const s = M.s; const u = unit();
+  const M = Map2D, W = World; const t = now / 1000; { const lv = levelOf(M.s); if (lv !== W._lv && M.s >= 16 && M.calm) { W._lv = lv; World.revalidate(); } } const dt = Math.min(.1, (now - (W.lastT || now)) / 1000); W.lastT = now; const s = M.s; const u = unit();
   spawnAround();
   // сёрферы и волны
   if (s > 6) for (const sp of W.surfers) { const X = sx2(sp.x, sp.y), Y = sy2(sp.x, sp.y); if (!onScreen(X, Y)) continue;
