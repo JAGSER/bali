@@ -1196,7 +1196,9 @@ function seaPath(ax, ay, bx, by) {
 const Dens = { k: 1, x0: -92, y0: -48, w: 170, h: 115, a: null };
 function buildDensity() { const D = Dens; D.a = new Uint16Array(D.w * D.h); for (const p of Map2D.pois) { const i = Math.floor(p.X - D.x0), j = Math.floor(p.Y - D.y0); if (i >= 0 && j >= 0 && i < D.w && j < D.h) D.a[j * D.w + i]++; } }
 function density(x, y) { const D = Dens; const i = Math.floor(x - D.x0), j = Math.floor(y - D.y0); if (i < 0 || j < 0 || i >= D.w || j >= D.h) return 0; return D.a[j * D.w + i]; }
-function biome(x, y) {
+const BiomeC = new Map();
+function biome(x, y) { const key = Math.round(x * 4) + ',' + Math.round(y * 4); let b = BiomeC.get(key); if (b === undefined) { b = biome0(x, y); if (BiomeC.size > 60000) BiomeC.clear(); BiomeC.set(key, b); } return b; }
+function biome0(x, y) {
   const M = Map2D; let coast = false; for (const [dx, dy] of [[.35, 0], [-.35, 0], [0, .35], [0, -.35]]) if (!isLand(x + dx, y + dy)) { coast = true; break; }
   const d = density(x, y);
   if (M.peaks.some(p => Math.hypot(p.x - x, p.y - y) < (p.e > 2500 ? 7 : 4.5))) return 'mount';
@@ -1420,7 +1422,9 @@ function renderTile(L, i, j, quick) {
         g.beginPath(); for (const r of rs) { if (r.k !== k) continue; const a = r.a; g.moveTo(X(a[0], a[1]), Y(a[0], a[1])); for (let q = 2; q < a.length; q += 2) g.lineTo(X(a[q], a[q + 1]), Y(a[q], a[q + 1])); } g.stroke(); g.globalAlpha = 1;
       }
       // пробки: подкраска загруженных дорог (ближе к центру — краснее), только на главных дорогах
-      if (s > 6 && s < 500 && App.showTraffic !== false) { g.lineCap = 'round'; for (const r of rs) { if (r.k > 4) continue; const a = r.a; for (let q = 2; q < a.length; q += 2) { const t = trafficLevel((a[q - 2] + a[q]) / 2, (a[q - 1] + a[q + 1]) / 2, r.k); const col = trafficColor(t); if (!col) continue; g.strokeStyle = col; g.lineWidth = Math.max(1.2, wOut(r.k) - 2.6); g.beginPath(); g.moveTo(X(a[q - 2], a[q - 1]), Y(a[q - 2], a[q - 1])); g.lineTo(X(a[q], a[q + 1]), Y(a[q], a[q + 1])); g.stroke(); } } }
+      if (s > 6 && s < 500 && App.showTraffic !== false && JAMS.some(j => inB([j[0] - j[2], j[1] - j[2], j[0] + j[2], j[1] + j[2]], 0))) { g.lineCap = 'round'; // пробки: все отрезки одного цвета и толщины — одним штрихом
+      const P = new Map(); for (const r of rs) { if (r.k > 4) continue; const a = r.a; for (let q = 2; q < a.length; q += 2) { const col = trafficColor(trafficLevel((a[q - 2] + a[q]) / 2, (a[q - 1] + a[q + 1]) / 2, r.k)); if (!col) continue; const key = col + '|' + r.k; let L = P.get(key); if (!L) P.set(key, L = []); L.push(a[q - 2], a[q - 1], a[q], a[q + 1]); } }
+      for (const [key, L] of P) { const [col, k] = key.split('|'); g.strokeStyle = col; g.lineWidth = Math.max(1.2, wOut(+k) - 2.6); g.beginPath(); for (let q = 0; q < L.length; q += 4) { g.moveTo(X(L[q], L[q + 1]), Y(L[q], L[q + 1])); g.lineTo(X(L[q + 2], L[q + 3]), Y(L[q + 2], L[q + 3])); } g.stroke(); } }
     }
     // декор: деревья, дома, кусты — по биому (вблизи рисуется в общей очереди глубины вместе с людьми — см. drawDecorDyn)
     if (s > 0 && !quick && !LITE) {
@@ -1776,7 +1780,7 @@ function applyWeather(w) {
 // ===== Пробки: по времени суток и известным узким местам (Чангу–Семиньяк, Денпасар, Санур, Убуд, байпас, аэропорт) =====
 const JAMS = [[-8.65, 115.14, 4.5, 1.0], [-8.69, 115.17, 3.5, 1.0], [-8.66, 115.22, 5, .8], [-8.72, 115.19, 3.5, .9], [-8.51, 115.26, 3, .7], [-8.74, 115.17, 2.5, .8], [-8.80, 115.17, 3, .5]].map(([la, ln, r, w]) => [toX(ln), toY(la), r, w]);
 function trafficLevel(x, y, k) { // 0 свободно .. 1 стоим
-  const n = baliNow(); const m = n.min; const rush = Math.max(0, 1 - Math.abs(m - 8.5 * 60) / 100) * .9 + Math.max(0, 1 - Math.abs(m - 17.5 * 60) / 120) + (m > 11 * 60 && m < 15 * 60 ? .35 : 0); if (m < 5.5 * 60 || m > 22 * 60) return 0;
+  const T = trafficLevel; if (!T._n || performance.now() - T._t > 2000) { T._n = baliNow(); T._t = performance.now(); } const n = T._n; const m = n.min; const rush = Math.max(0, 1 - Math.abs(m - 8.5 * 60) / 100) * .9 + Math.max(0, 1 - Math.abs(m - 17.5 * 60) / 120) + (m > 11 * 60 && m < 15 * 60 ? .35 : 0); if (m < 5.5 * 60 || m > 22 * 60) return 0;
   let z = 0; for (const [jx, jy, r, w] of JAMS) { const d = Math.hypot(x - jx, y - jy); if (d < r) z = Math.max(z, w * (1 - d / r)); }
   const kk = k <= 2 ? 1 : k === 3 ? .8 : .55; return Math.max(0, Math.min(1, z * Math.min(1, rush) * kk * (n.dow === 0 ? .6 : 1)));
 }
