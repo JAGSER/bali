@@ -3006,9 +3006,11 @@ GL.updateDecor = function (bb) {
   const M = Map2D, s = M.s, lv = levelOf(s); const fine = s >= FINE_S;
   // крупный декор
   for (const ch of GL.decor.chunks.values()) ch.visible = false;
-  if (!fine) { const pad = 1; for (let cx = Math.floor((bb[0] - pad) / GL_CH); cx <= Math.floor((bb[2] + pad) / GL_CH); cx++) for (let cy = Math.floor((bb[1] - pad) / GL_CH); cy <= Math.floor((bb[3] + pad) / GL_CH); cy++) { const ch = glChunk(cx, cy); ch.visible = true; glUpdateChunk(ch, s, lv, false); } }
+  let made = 0; if (!fine) { if (!GL.ckeys) { GL.ckeys = new Set(); for (const d of Map2D.decor) GL.ckeys.add(Math.floor(d.x / GL_CH) + ',' + Math.floor(d.y / GL_CH)); }
+    const pad = 1, x0 = Math.floor((bb[0] - pad) / GL_CH), x1 = Math.floor((bb[2] + pad) / GL_CH), y0 = Math.floor((bb[1] - pad) / GL_CH), y1 = Math.floor((bb[3] + pad) / GL_CH);
+    for (const key of GL.ckeys) { const i = key.indexOf(','), cx = +key.slice(0, i), cy = +key.slice(i + 1); if (cx < x0 || cx > x1 || cy < y0 || cy > y1) continue; if (!GL.decor.chunks.has(key)) { if (made > 30) { GL.pend = true; continue; } made++; } const ch = glChunk(cx, cy); ch.visible = true; glUpdateChunk(ch, s, lv, false); } }
   for (const ch of GL.decor.fine.values()) ch.visible = false;
-  if (fine) { const now = performance.now(); let made = 0; for (let cx = Math.floor((bb[0] - .1)); cx <= Math.floor(bb[2] + .1); cx++) for (let cy = Math.floor(bb[1] - .1); cy <= Math.floor(bb[3] + .3); cy++) { let ch = GL.decor.fine.get(cx + ',' + cy); if (!ch) { if (made > 3) { Map2D.dirty = true; GL.lastCam = ''; continue; } ch = glFineChunk(cx, cy); made++; } ch.visible = true; ch._t = now; glUpdateChunk(ch, s, lv, true); } }
+  if (fine) { const now = performance.now(); made = 0; for (let cx = Math.floor((bb[0] - .1)); cx <= Math.floor(bb[2] + .1); cx++) for (let cy = Math.floor(bb[1] - .1); cy <= Math.floor(bb[3] + .3); cy++) { let ch = GL.decor.fine.get(cx + ',' + cy); if (!ch && !isLand(cx + .5, cy + .5) && !isLand(cx, cy) && !isLand(cx + 1, cy + 1) && !isLand(cx + 1, cy) && !isLand(cx, cy + 1)) continue; if (!ch) { if (made > 3) { Map2D.dirty = true; GL.lastCam = ''; continue; } ch = glFineChunk(cx, cy); made++; } ch.visible = true; ch._t = now; glUpdateChunk(ch, s, lv, true); } }
 };
 
 // ----- кадр -----
